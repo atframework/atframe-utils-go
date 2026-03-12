@@ -3,17 +3,19 @@ package main
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	libatframe_utils "github.com/atframework/atframe-utils-go"
+	build_setting "github.com/atframework/atframe-utils-go/build_setting"
 )
 
 type Config struct {
@@ -53,7 +55,7 @@ func parseFlags() Config {
 
 // downloadFile 从 URL 下载文件到指定路径
 func downloadFile(url, filePath string) error {
-	data := libatframe_utils.MustHTTPGet(url)
+	data := mustHTTPGet(url)
 
 	// 确保目录存在
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
@@ -71,6 +73,26 @@ func downloadFile(url, filePath string) error {
 	}
 
 	return nil
+}
+
+func mustHTTPGet(targetURL string) []byte {
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Get(targetURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "download failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "bad status: %s\n", resp.Status)
+		os.Exit(1)
+	}
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, resp.Body); err != nil {
+		fmt.Fprintf(os.Stderr, "read body: %v\n", err)
+		os.Exit(1)
+	}
+	return buf.Bytes()
 }
 
 // extractZip 解压 ZIP 文件
@@ -361,7 +383,7 @@ type InstallToolConfig struct {
 func checkToolValid(cfg InstallToolConfig) (string, bool, error) {
 	// 优先检查 build-settings 中的工具信息
 	if cfg.SettingsFile != "" {
-		manager, err := libatframe_utils.BuildManagerLoad(cfg.SettingsFile)
+		manager, err := build_setting.BuildManagerLoad(cfg.SettingsFile)
 		if err == nil {
 			// 尝试从 settings 中获取已安装的工具信息
 			if toolInfo, err := manager.GetTool(cfg.AppName); err == nil && toolInfo != nil {
@@ -470,10 +492,10 @@ func extractAndGetTools(downloadedFile, downloadPath, appName string) ([]string,
 
 // updateBuildSettingsForTool 更新 build-settings（分离出来便于测试）
 func updateBuildSettingsForTool(cfg InstallToolConfig, toolPath string) error {
-	var manager libatframe_utils.BuildMananger
+	var manager build_setting.BuildMananger
 	var err error
 
-	manager, err = libatframe_utils.BuildManagerLoad(cfg.SettingsFile)
+	manager, err = build_setting.BuildManagerLoad(cfg.SettingsFile)
 	if err != nil {
 		return fmt.Errorf("failed to load build manager from settings file: %w", err)
 	}

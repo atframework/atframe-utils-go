@@ -1,8 +1,4 @@
-package libatframe_utils
-
-import (
-	buildsetting "github.com/atframework/atframe-utils-go/build_setting"
-)
+package buildsetting
 
 type BuildMananger interface {
 	Init() error
@@ -15,5 +11,5 @@ type BuildMananger interface {
 	ListTools() (map[string]string, error)
 }
 
-var NewBuildManager = buildsetting.NewManagerInDir
-var BuildManagerLoad = buildsetting.NewManagerLoadExistSettingsFile
+var NewBuildManager = NewManagerInDir
+var BuildManagerLoad = NewManagerLoadExistSettingsFile

@@ -1,16 +1,25 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
-	libatframe_utils "github.com/atframework/atframe-utils-go"
+	build_setting "github.com/atframework/atframe-utils-go/build_setting"
 )
 
 // Config 命令行配置
@@ -49,7 +58,7 @@ func installProtoc(cfg Config) error {
 	fmt.Printf("Installation of protoc version %s with go-plugin %s setting-file %s\n", cfg.ProtocVersion, cfg.GoPluginVersion, settingFile)
 
 	// 步骤1: 加载 build settings
-	buildSettingMgr, err := libatframe_utils.BuildManagerLoad(settingFile)
+	buildSettingMgr, err := build_setting.BuildManagerLoad(settingFile)
 	if err != nil {
 		return fmt.Errorf("load build manager failed: %w", err)
 	}
@@ -113,7 +122,7 @@ func InstallProtocBin(protocVersion string, dsDir string) (binPath string, err e
 		return "", fmt.Errorf("protoc error version: %w", fmt.Errorf(" version: %s format error", v))
 	}
 
-	protocPath := libatframe_utils.EnsureProtocExecutableByVersion(protocVersion, dsDir)
+	protocPath := ensureProtoc(protocVersion, dsDir)
 	if protocPath == "" {
 		return "", fmt.Errorf("ensure protoc executable failed")
 	}
@@ -336,4 +345,210 @@ func InstallPlugin(module string, version string) error {
 
 func uninstallPlugin(pluginName string) error {
 	return RemovePlugin(pluginName)
+}
+
+// =============== Protoc 下载/解压 ===============
+
+func ensureProtoc(version string, binDir string) string {
+	// 若系统 PATH 已存在 protoc，且版本 >= 需要版本，可直接用
+	if p, err := exec.LookPath(binName("protoc")); err == nil {
+		if ok := isProtocVersionAtLeast(p, versionMajor(version)); ok {
+			return p
+		}
+		log.Printf("system protoc version is lower than %s, downloading portable protoc...", version)
+	}
+
+	osName, arch := runtime.GOOS, runtime.GOARCH
+	assetURL, isZip, err := protocAssetURL(version, osName, arch)
+	if err != nil {
+		log.Fatalf("resolve protoc asset: %v", err)
+	}
+
+	cacheRoot := binDir
+	targetDir := filepath.Join(cacheRoot, "protoc", version, osName+"-"+arch)
+	protocPath := filepath.Join(targetDir, binName("protoc"))
+	protocFallbackPath := filepath.Join(targetDir, "bin", binName("protoc"))
+
+	if fileExists(protocPath) {
+		return protocPath
+	}
+
+	if fileExists(protocFallbackPath) {
+		return protocFallbackPath
+	}
+
+	mustMkdirAll(targetDir)
+
+	// 下载到内存
+	data := mustHTTPGet(assetURL)
+
+	// 解压
+	if isZip {
+		unzipToDir(data, targetDir)
+	} else {
+		untarGzToDir(data, targetDir)
+	}
+
+	if !fileExists(protocPath) && fileExists(protocFallbackPath) {
+		os.Rename(protocFallbackPath, protocPath)
+	}
+
+	// 确保可执行权限（*nix）
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(protocPath, 0o755); err != nil {
+			log.Printf("chmod protoc: %v", err)
+		}
+	}
+
+	if !fileExists(protocPath) {
+		log.Fatalf("protoc not found after extraction at: %s", protocPath)
+	}
+	return protocPath
+}
+
+func protocAssetURL(version, osName, arch string) (string, bool, error) {
+	base := "https://github.com/protocolbuffers/protobuf/releases/download/v" + version + "/"
+
+	switch osName {
+	case "linux":
+		switch arch {
+		case "amd64":
+			return base + "protoc-" + version + "-linux-x86_64.zip", true, nil
+		case "arm64":
+			return base + "protoc-" + version + "-linux-aarch_64.zip", true, nil
+		}
+	case "darwin":
+		return base + "protoc-" + version + "-osx-universal_binary.zip", true, nil
+	case "windows":
+		if arch == "amd64" || arch == "arm64" {
+			return base + "protoc-" + version + "-win64.zip", true, nil
+		}
+	}
+	return "", false, fmt.Errorf("unsupported platform %s/%s or asset not mapped", osName, arch)
+}
+
+func mustHTTPGet(url string) []byte {
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		log.Fatalf("download failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("bad status: %s", resp.Status)
+	}
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, resp.Body); err != nil {
+		log.Fatalf("read body: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func unzipToDir(data []byte, dest string) {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		log.Fatalf("read zip: %v", err)
+	}
+	for _, f := range r.File {
+		target := filepath.Join(dest, f.Name)
+		// 防止 zip slip
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)+string(os.PathSeparator)) {
+			log.Fatalf("illegal path in zip: %s", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			mustMkdirAll(target)
+			continue
+		}
+		mustMkdirAll(filepath.Dir(target))
+		rc, err := f.Open()
+		if err != nil {
+			log.Fatalf("open zip file: %v", err)
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			rc.Close()
+			log.Fatalf("create file: %v", err)
+		}
+		if _, err := io.Copy(out, rc); err != nil {
+			rc.Close()
+			out.Close()
+			log.Fatalf("write file: %v", err)
+		}
+		rc.Close()
+		out.Close()
+	}
+}
+
+func untarGzToDir(data []byte, dest string) {
+	gzr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		log.Fatalf("read gzip: %v", err)
+	}
+	defer gzr.Close()
+	tr := tar.NewReader(gzr)
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatalf("read tar: %v", err)
+		}
+		target := filepath.Join(dest, hdr.Name)
+		// 防止 tar slip
+		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)+string(os.PathSeparator)) {
+			log.Fatalf("illegal path in tar: %s", hdr.Name)
+		}
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			mustMkdirAll(target)
+		case tar.TypeReg:
+			mustMkdirAll(filepath.Dir(target))
+			out, err := os.Create(target)
+			if err != nil {
+				log.Fatalf("create file: %v", err)
+			}
+			if _, err := io.Copy(out, tr); err != nil {
+				out.Close()
+				log.Fatalf("write file: %v", err)
+			}
+			out.Close()
+		default:
+			// 忽略其他类型
+		}
+	}
+}
+
+func mustMkdirAll(p string) {
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		log.Fatalf("mkdir: %v", err)
+	}
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
+}
+
+func binName(name string) string {
+	if runtime.GOOS == "windows" && !strings.HasSuffix(strings.ToLower(name), ".exe") {
+		return name + ".exe"
+	}
+	return name
+}
+
+func isProtocVersionAtLeast(protocPath string, wantMajor int) bool {
+	out, err := exec.Command(protocPath, "--version").Output()
+	if err != nil {
+		return false
+	}
+	var major int
+	_, _ = fmt.Sscanf(string(out), "libprotoc %d", &major)
+	return major >= wantMajor
+}
+
+func versionMajor(v string) int {
+	var m int
+	fmt.Sscanf(v, "%d", &m)
+	return m
 }

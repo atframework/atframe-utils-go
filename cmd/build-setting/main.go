@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	libatframe_utils "github.com/atframework/atframe-utils-go"
+	build_setting "github.com/atframework/atframe-utils-go/build_setting"
 )
 
-type buildMgr libatframe_utils.BuildMananger
+type buildMgr build_setting.BuildMananger
 
 // 创建 manager（支持 -settings-file 参数）
 func createManager() buildMgr {
@@ -34,13 +34,13 @@ func createManager() buildMgr {
 		}
 		settingsFile = cwd + "/build-settings.json"
 
-		manager, err = libatframe_utils.NewBuildManager(settingsFile)
+		manager, err = build_setting.NewBuildManager(settingsFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error: failed to create build manager: %v\n", err)
 			os.Exit(1)
 		}
 	} else {
-		manager, err = libatframe_utils.BuildManagerLoad(settingsFile)
+		manager, err = build_setting.BuildManagerLoad(settingsFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Error: failed to create build manager with settings file '%s': %v\n", settingsFile, err)
 			os.Exit(1)
