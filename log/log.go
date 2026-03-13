@@ -328,6 +328,13 @@ type LogAttr interface {
 	LogAttr() []slog.Attr
 }
 
+func CreateDefaultLogger() *Logger {
+	return &Logger{
+		logger:  slog.Default(),
+		GetTime: &DefaultGetTime{},
+	}
+}
+
 func NewLogger(handler slog.Handler, getTime GetTime) *Logger {
 	return &Logger{
 		logger:  slog.New(handler),
