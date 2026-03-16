@@ -309,6 +309,9 @@ func (w *LogBufferedRotatingWriter) startFlushRoutine() {
 	}
 
 	go func() {
+		if w.flushInterval <= 0 {
+			w.flushInterval = time.Second
+		}
 		ticker := time.NewTicker(w.flushInterval)
 		defer ticker.Stop()
 		defer close(w.stoppedCh)
