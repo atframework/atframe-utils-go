@@ -218,9 +218,10 @@ type LogBufferedRotatingWriter struct {
 	ringBuffer *LogRingBuffer
 
 	// 后台刷新 goroutine 控制
-	stopCh  chan struct{}
-	flushCh chan struct{} // 用于手动触发刷新
-	started atomic.Bool
+	stopCh    chan struct{}
+	stoppedCh chan struct{}
+	flushCh   chan struct{} // 用于手动触发刷新
+	started   atomic.Bool
 }
 
 var intervalLut = [128]int64{}
@@ -237,6 +238,7 @@ func CloseAllLogWriters() {
 	writerHandlerMap.Range(func(key, value any) bool {
 		writer := value.(*LogBufferedRotatingWriter)
 		writer.Close()
+		<-writer.stoppedCh
 		return true
 	})
 }
@@ -261,6 +263,7 @@ func NewLogBufferedRotatingWriter(getTime GetTime, fileName string, fileAlias st
 		flushInterval:   flushInterval,
 		ringBuffer:      NewLogRingBuffer(bufferSlotSize),
 		stopCh:          make(chan struct{}),
+		stoppedCh:       make(chan struct{}),
 		flushCh:         make(chan struct{}, 1), // 缓冲通道，避免阻塞
 	}
 
@@ -308,6 +311,7 @@ func (w *LogBufferedRotatingWriter) startFlushRoutine() {
 	go func() {
 		ticker := time.NewTicker(w.flushInterval)
 		defer ticker.Stop()
+		defer close(w.stoppedCh)
 
 		for {
 			select {
