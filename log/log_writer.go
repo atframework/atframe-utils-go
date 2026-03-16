@@ -238,7 +238,7 @@ func CloseAllLogWriters() {
 	writerHandlerMap.Range(func(key, value any) bool {
 		writer := value.(*LogBufferedRotatingWriter)
 		writer.Close()
-		<-writer.stoppedCh
+		writer.AwaitClose()
 		return true
 	})
 }
@@ -551,4 +551,11 @@ func (w *LogBufferedRotatingWriter) Close() {
 		close(w.stopCh)
 	}
 	writerHandlerMap.Delete(w.id)
+}
+
+func (w *LogBufferedRotatingWriter) AwaitClose() {
+	if w == nil {
+		return
+	}
+	<-w.stoppedCh
 }
