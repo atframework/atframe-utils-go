@@ -250,9 +250,15 @@ func RedisSliceKVMapToPB(field []string, data []interface{}, msg proto.Message) 
 			}
 			return 0, false, fmt.Errorf("field not found:%s", key)
 		}
-		if val == "" {
+
+		if val == "" || len(val) <= 1 {
 			continue
 		}
+
+		if val[0] != '&' {
+			return 0, false, fmt.Errorf("invalid value string for key:%s", key)
+		}
+		val = val[1:]
 
 		switch fd.Kind() {
 		case protoreflect.StringKind:
