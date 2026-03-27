@@ -44,9 +44,9 @@ func PBMapToRedisKV(msg proto.Message, CASVersion *uint64, forceUpdate bool) []s
 		case protoreflect.BytesKind:
 			ret = append(ret, name, lu.BytestoString(append([]byte("&"), v.Bytes()...)))
 		case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Int64Kind, protoreflect.Sint64Kind:
-			ret = append(ret, name, fmt.Sprintf("&%d", v.Int()))
+			ret = append(ret, name, fmt.Sprintf("%d", v.Int()))
 		case protoreflect.Uint32Kind, protoreflect.Uint64Kind:
-			ret = append(ret, name, fmt.Sprintf("&%d", v.Uint()))
+			ret = append(ret, name, fmt.Sprintf("%d", v.Uint()))
 		case protoreflect.BoolKind:
 			ret = append(ret, name, fmt.Sprintf("&%t", v.Bool()))
 		case protoreflect.FloatKind, protoreflect.DoubleKind:
@@ -102,13 +102,31 @@ func RedisKVMapToPB(data map[string]string, msg proto.Message) (uint64, error) {
 			}
 			return 0, fmt.Errorf("field not found:%s", key)
 		}
-		if val == "" || len(val) <= 1 {
+		if len(val) == 0 {
 			continue
 		}
-		if val[0] != '&' {
-			return 0, fmt.Errorf("invalid value string for key:%s", key)
+
+		switch fd.Kind() {
+		case protoreflect.StringKind:
+			fallthrough
+		case protoreflect.BytesKind:
+			fallthrough
+		case protoreflect.BoolKind:
+			fallthrough
+		case protoreflect.FloatKind:
+			fallthrough
+		case protoreflect.DoubleKind:
+			fallthrough
+		case protoreflect.MessageKind:
+			if val[0] != '&' {
+				return 0, fmt.Errorf("invalid value string for key:%s", key)
+			}
+			val = val[1:]
 		}
-		val = val[1:]
+
+		if len(val) == 0 {
+			continue
+		}
 
 		switch fd.Kind() {
 		case protoreflect.StringKind:
@@ -251,14 +269,31 @@ func RedisSliceKVMapToPB(field []string, data []interface{}, msg proto.Message) 
 			return 0, false, fmt.Errorf("field not found:%s", key)
 		}
 
-		if val == "" || len(val) <= 1 {
+		if len(val) == 0 {
 			continue
 		}
 
-		if val[0] != '&' {
-			return 0, false, fmt.Errorf("invalid value string for key:%s", key)
+		switch fd.Kind() {
+		case protoreflect.StringKind:
+			fallthrough
+		case protoreflect.BytesKind:
+			fallthrough
+		case protoreflect.BoolKind:
+			fallthrough
+		case protoreflect.FloatKind:
+			fallthrough
+		case protoreflect.DoubleKind:
+			fallthrough
+		case protoreflect.MessageKind:
+			if val[0] != '&' {
+				return 0, false, fmt.Errorf("invalid value string for key:%s", key)
+			}
+			val = val[1:]
 		}
-		val = val[1:]
+
+		if len(val) == 0 {
+			continue
+		}
 
 		switch fd.Kind() {
 		case protoreflect.StringKind:
