@@ -36,7 +36,13 @@ func newlogBuffer() *logBuffer {
 	return bufPool.Get().(*logBuffer)
 }
 
+// maxPooledLogBufferSize 超过此容量的 buffer 不归还池，避免大日志长期占用内存
+const maxPooledLogBufferSize = 64 * 1024
+
 func (b *logBuffer) Free() {
+	if cap(*b) > maxPooledLogBufferSize {
+		return
+	}
 	*b = (*b)[:0]
 	bufPool.Put(b)
 }
@@ -220,7 +226,9 @@ func (h *logHandlerImpl) getStack(pc uintptr) string {
 		sb.WriteString(")\n")
 	}
 
-	return sb.String()
+	// 必须做真实拷贝：String() 是 unsafe 零拷贝，
+	// defer sb.Free() 返回前会将 buffer 归还池，导致返回的 string 指向被复用的内存。
+	return string(*sb)
 }
 
 func (h *logHandlerWriter) Enabled(level slog.Level) bool {

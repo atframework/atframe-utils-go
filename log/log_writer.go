@@ -157,6 +157,7 @@ func (rb *LogRingBuffer) ReadAll() ([]*logBuffer, uint64) {
 		// 直接移动读取位置（单消费者无需CAS）
 		rb.readPos.Store(readPos + 1)
 		result = append(result, slot.data)
+		slot.data = nil
 		// 重置就绪标记
 		slot.ready.Store(false)
 	}
