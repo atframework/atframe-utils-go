@@ -103,6 +103,29 @@ func GenerateXresloaderTemplate(templatePath string, resourcePath string,
 	return nil
 }
 
+// CopyVersionTxt 拷贝 version.txt 文件到 bytes 输出目录.
+func CopyVersionTxt(excelSrcPath string, bytesOutputDir string) error {
+	srcPath := filepath.Join(excelSrcPath, "version.txt")
+
+	// 如果源文件不存在则跳过（兼容没有 version.txt 的旧环境）
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		fmt.Printf("- version.txt not found at %s, skipping\n", srcPath)
+		return nil
+	}
+
+	if err := os.MkdirAll(bytesOutputDir, dirPermission); err != nil {
+		return fmt.Errorf("failed to create bytes output directory: %w", err)
+	}
+
+	dstPath := filepath.Join(bytesOutputDir, "version.txt")
+	if err := copyFile(srcPath, dstPath); err != nil {
+		return fmt.Errorf("failed to copy version.txt: %w", err)
+	}
+
+	fmt.Printf("✓ version.txt copied to %s\n", dstPath)
+	return nil
+}
+
 // CopyValidatorYAML 拷贝 validator.yaml 文件.
 func CopyValidatorYAML(resourcePath string, outputDir string) error {
 	srcPath := filepath.Join(resourcePath, "validator.yaml")
@@ -205,6 +228,12 @@ func main() {
 
 	// 生成模版
 	if err := GenerateXresloaderTemplate(templatePath, resourcePath, vars, outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 拷贝 version.txt 到 bytes 输出目录
+	if err := CopyVersionTxt(excelSrc, bytesOutput); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
