@@ -350,14 +350,6 @@ func uninstallPlugin(pluginName string) error {
 // =============== Protoc 下载/解压 ===============
 
 func ensureProtoc(version string, binDir string) string {
-	// 若系统 PATH 已存在 protoc，且版本 >= 需要版本，可直接用
-	if p, err := exec.LookPath(binName("protoc")); err == nil {
-		if ok := isProtocVersionAtLeast(p, versionMajor(version)); ok {
-			return p
-		}
-		log.Printf("system protoc version is lower than %s, downloading portable protoc...", version)
-	}
-
 	osName, arch := runtime.GOOS, runtime.GOARCH
 	assetURL, isZip, err := protocAssetURL(version, osName, arch)
 	if err != nil {
