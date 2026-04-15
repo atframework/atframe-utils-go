@@ -3,12 +3,41 @@ package libatframe_utils_proto_utility
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	lu "github.com/atframework/atframe-utils-go/lang_utility"
 )
+
+// marshalBufPool 复用序列化缓冲区，减少 MarshalAppend 产生的堆分配
+var marshalBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 256)
+		return &b
+	},
+}
+
+var unmarshalOpts = proto.UnmarshalOptions{DiscardUnknown: true}
+
+// marshalWithPrefix 使用池化 buffer 序列化 proto 消息并添加 '&' 前缀
+func marshalWithPrefix(msg proto.Message) (string, error) {
+	bp := marshalBufPool.Get().(*[]byte)
+	buf := (*bp)[:0]
+	buf = append(buf, '&')
+	var err error
+	buf, err = proto.MarshalOptions{}.MarshalAppend(buf, msg)
+	if err != nil {
+		*bp = buf
+		marshalBufPool.Put(bp)
+		return "", err
+	}
+	result := string(buf)
+	*bp = buf
+	marshalBufPool.Put(bp)
+	return result, nil
+}
 
 var CASKeyField = "CAS_VERSION"
 
@@ -24,7 +53,7 @@ func PBMapToRedisKV(msg proto.Message, CASVersion *uint64, forceUpdate bool) []s
 		if forceUpdate {
 			ret = append(ret, CASKeyField, "-1")
 		} else {
-			ret = append(ret, CASKeyField, fmt.Sprintf("%d", *CASVersion))
+			ret = append(ret, CASKeyField, strconv.FormatUint(*CASVersion, 10))
 		}
 	} else {
 		ret = make([]string, 0, m.Fields().Len()*2)
@@ -44,19 +73,19 @@ func PBMapToRedisKV(msg proto.Message, CASVersion *uint64, forceUpdate bool) []s
 		case protoreflect.BytesKind:
 			ret = append(ret, name, lu.BytestoString(append([]byte("&"), v.Bytes()...)))
 		case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Int64Kind, protoreflect.Sint64Kind:
-			ret = append(ret, name, fmt.Sprintf("%d", v.Int()))
+			ret = append(ret, name, strconv.FormatInt(v.Int(), 10))
 		case protoreflect.Uint32Kind, protoreflect.Uint64Kind:
-			ret = append(ret, name, fmt.Sprintf("%d", v.Uint()))
+			ret = append(ret, name, strconv.FormatUint(v.Uint(), 10))
 		case protoreflect.BoolKind:
-			ret = append(ret, name, fmt.Sprintf("&%t", v.Bool()))
+			ret = append(ret, name, "&"+strconv.FormatBool(v.Bool()))
 		case protoreflect.FloatKind, protoreflect.DoubleKind:
-			ret = append(ret, name, fmt.Sprintf("&%f", v.Float()))
+			ret = append(ret, name, "&"+strconv.FormatFloat(v.Float(), 'f', -1, 64))
 		case protoreflect.MessageKind:
-			b, err := proto.MarshalOptions{}.MarshalAppend([]byte("&"), v.Message().Interface())
+			s, err := marshalWithPrefix(v.Message().Interface())
 			if err != nil {
 				continue
 			}
-			ret = append(ret, name, lu.BytestoString(b))
+			ret = append(ret, name, s)
 		default:
 			continue
 		}
@@ -67,21 +96,21 @@ func PBMapToRedisKV(msg proto.Message, CASVersion *uint64, forceUpdate bool) []s
 
 func PBMapToRedisKLUpdate(msg proto.Message, listIndex uint64) (ret []string) {
 	ret = make([]string, 0, 2)
-	b, err := proto.MarshalOptions{}.MarshalAppend([]byte("&"), msg)
+	s, err := marshalWithPrefix(msg)
 	if err != nil {
 		return ret
 	}
-	ret = append(ret, fmt.Sprintf("%d", listIndex), lu.BytestoString(b))
+	ret = append(ret, strconv.FormatUint(listIndex, 10), s)
 	return ret
 }
 
 func PBMapToRedisKLAdd(msg proto.Message, maxLen uint32) (ret []string) {
 	ret = make([]string, 0, 2)
-	b, err := proto.MarshalOptions{}.MarshalAppend([]byte("&"), msg)
+	s, err := marshalWithPrefix(msg)
 	if err != nil {
 		return ret
 	}
-	ret = append(ret, fmt.Sprintf("%d", maxLen), lu.BytestoString(b))
+	ret = append(ret, strconv.FormatUint(uint64(maxLen), 10), s)
 	return ret
 }
 
@@ -178,7 +207,7 @@ func RedisKVMapToPB(data map[string]string, msg proto.Message) (uint64, error) {
 		case protoreflect.MessageKind:
 			// 嵌套结构从bytes反序列化
 			subMsg := m.NewField(fd)
-			err := proto.Unmarshal(lu.StringtoBytes(val), subMsg.Message().Interface())
+			err := unmarshalOpts.Unmarshal(lu.StringtoBytes(val), subMsg.Message().Interface())
 			if err != nil {
 				return 0, fmt.Errorf("unmarshal failed")
 			}
@@ -224,7 +253,7 @@ func RedisKLMapToPB(data map[string]string, messageCreate func() proto.Message) 
 		}
 		valueStr := val[1:]
 		msg.Table = messageCreate()
-		err = proto.Unmarshal(lu.StringtoBytes(valueStr), msg.Table)
+		err = unmarshalOpts.Unmarshal(lu.StringtoBytes(valueStr), msg.Table)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal failed for list index %d", msg.ListIndex)
 		}
@@ -346,7 +375,7 @@ func RedisSliceKVMapToPB(field []string, data []interface{}, msg proto.Message) 
 			// 嵌套结构从bytes反序列化
 			subMsg := m.NewField(fd)
 			sm := subMsg.Message()
-			err := proto.Unmarshal(lu.StringtoBytes(val), sm.Interface())
+			err := unmarshalOpts.Unmarshal(lu.StringtoBytes(val), sm.Interface())
 			if err != nil {
 				return 0, false, fmt.Errorf("unmarshal failed")
 			}
@@ -396,7 +425,7 @@ func RedisSliceKLMapToPB(sliceKey []RedisSliceKey, data []interface{}, messageCr
 		}
 		valueStr := val[1:]
 		msg.Table = messageCreate()
-		err := proto.Unmarshal(lu.StringtoBytes(valueStr), msg.Table)
+		err := unmarshalOpts.Unmarshal(lu.StringtoBytes(valueStr), msg.Table)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal failed for list index %d", msg.ListIndex)
 		}
