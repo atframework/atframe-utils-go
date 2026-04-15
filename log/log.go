@@ -172,7 +172,7 @@ func (h *logHandlerImpl) AppendWriter(writer logHandlerWriter) {
 type frameInfo struct {
 	function string
 	file     string
-	line     int
+	line     string
 }
 
 func (h *logHandlerImpl) getFrameInfo(pc uintptr) *frameInfo {
@@ -187,7 +187,7 @@ func (h *logHandlerImpl) getFrameInfo(pc uintptr) *frameInfo {
 	info := frameInfo{
 		function: frame.Function,
 		file:     filepath.Base(frame.File),
-		line:     frame.Line,
+		line:     strconv.Itoa(frame.Line),
 	}
 	h.frameInfoCache.Store(pc, &info)
 	return &info
@@ -222,7 +222,7 @@ func (h *logHandlerImpl) getStack(pc uintptr) string {
 		sb.WriteString(" (")
 		sb.WriteString(f.file)
 		sb.WriteByte(':')
-		sb.WriteString(strconv.Itoa(f.line))
+		sb.WriteString(f.line)
 		sb.WriteString(")\n")
 	}
 
@@ -362,7 +362,7 @@ func (l *Logger) Enabled(ctx context.Context, level slog.Level) bool {
 	return l.logger.Enabled(ctx, level)
 }
 
-func LogInner(sysnow time.Time, logger *slog.Logger, pc uintptr, ctx context.Context, level slog.Level, msg string, args ...any) {
+func LogInner(sysnow time.Time, logger *slog.Logger, pc uintptr, ctx context.Context, level slog.Level, msg string, args ...[]any) {
 	if lu.IsNil(ctx) {
 		ctx = context.Background()
 	}
@@ -373,11 +373,13 @@ func LogInner(sysnow time.Time, logger *slog.Logger, pc uintptr, ctx context.Con
 		return
 	}
 	r := slog.NewRecord(sysnow, level, msg, pc)
-	r.Add(args...)
+	for i := range args {
+		r.Add(args[i]...)
+	}
 	_ = logger.Handler().Handle(ctx, r)
 }
 
-func (l *Logger) LogInner(sysnow time.Time, pc uintptr, ctx context.Context, level slog.Level, msg string, args ...any) {
+func (l *Logger) LogInner(sysnow time.Time, pc uintptr, ctx context.Context, level slog.Level, msg string, args ...[]any) {
 	if l == nil {
 		LogInner(time.Now(), nil, pc, ctx, level, msg, args...)
 	} else {
@@ -387,32 +389,32 @@ func (l *Logger) LogInner(sysnow time.Time, pc uintptr, ctx context.Context, lev
 
 func (l *Logger) LogError(msg string, args ...any) {
 	if l == nil {
-		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelError, msg, args...)
+		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelError, msg, args)
 	} else {
-		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelError, msg, args...)
+		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelError, msg, args)
 	}
 }
 
 func (l *Logger) LogWarn(msg string, args ...any) {
 	if l == nil {
-		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelWarn, msg, args...)
+		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelWarn, msg, args)
 	} else {
-		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelWarn, msg, args...)
+		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelWarn, msg, args)
 	}
 }
 
 func (l *Logger) LogInfo(msg string, args ...any) {
 	if l == nil {
-		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelInfo, msg, args...)
+		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelInfo, msg, args)
 	} else {
-		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelInfo, msg, args...)
+		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelInfo, msg, args)
 	}
 }
 
 func (l *Logger) LogDebug(msg string, args ...any) {
 	if l == nil {
-		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelDebug, msg, args...)
+		LogInner(time.Now(), slog.Default(), GetCaller(1), nil, slog.LevelDebug, msg, args)
 	} else {
-		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelDebug, msg, args...)
+		LogInner(l.GetSysNow(), l.logger, GetCaller(1), nil, slog.LevelDebug, msg, args)
 	}
 }

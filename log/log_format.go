@@ -2,14 +2,13 @@ package libatapp
 
 import (
 	"log/slog"
-	"strconv"
 	"time"
 )
 
 type CallerInfo struct {
 	Now         time.Time
 	LogLevel    slog.Level
-	RotateIndex uint32
+	RotateIndex string
 	Frame       *frameInfo
 }
 
@@ -17,8 +16,6 @@ func LogFormat(format string, sb LogFormatBufferWriter, caller CallerInfo, custo
 	if format == "" {
 		return ""
 	}
-
-	levelName := LevelNameResolver(caller.LogLevel)
 
 	now := caller.Now.In(time.Local)
 	parts := newTimeParts(now)
@@ -80,9 +77,9 @@ func LogFormat(format string, sb LogFormatBufferWriter, caller CallerInfo, custo
 		case 'f': // 微秒，五位
 			appendSubSecond(sb, now)
 		case 'L': // 日志级别名称
-			sb.WriteString(levelName)
+			sb.WriteString(LevelNameResolver(caller.LogLevel))
 		case 'l': // 日志级别ID
-			sb.WriteString(strconv.Itoa(int(caller.LogLevel)))
+			sb.WriteString(LevelIDResolver(caller.LogLevel))
 		case 's': // 文件路径，项目目录用~代替
 			if caller.Frame != nil {
 				appendFilePath(sb, caller.Frame.file)
@@ -97,7 +94,7 @@ func LogFormat(format string, sb LogFormatBufferWriter, caller CallerInfo, custo
 			}
 		case 'n': // 行号
 			if caller.Frame != nil {
-				sb.WriteString(strconv.FormatUint(uint64(caller.Frame.line), 10))
+				sb.WriteString(caller.Frame.line)
 			} else {
 				sb.WriteString("0")
 			}
@@ -108,7 +105,7 @@ func LogFormat(format string, sb LogFormatBufferWriter, caller CallerInfo, custo
 				sb.WriteString("unknow_function")
 			}
 		case 'N': // 日志文件轮转索引
-			sb.WriteString(strconv.FormatUint(uint64(caller.RotateIndex), 10))
+			sb.WriteString(caller.RotateIndex)
 		default: // 原样输出
 			sb.WriteByte(ch)
 		}
@@ -127,6 +124,19 @@ func LevelNameResolver(level slog.Level) string {
 		return " INFO"
 	default:
 		return "DEBUG"
+	}
+}
+
+func LevelIDResolver(level slog.Level) string {
+	switch {
+	case level >= slog.LevelError:
+		return "8"
+	case level >= slog.LevelWarn:
+		return "4"
+	case level >= slog.LevelInfo:
+		return "0"
+	default:
+		return "-4"
 	}
 }
 

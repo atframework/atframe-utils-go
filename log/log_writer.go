@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -321,20 +322,20 @@ func (w *LogBufferedRotatingWriter) startFlushRoutine() {
 			select {
 			case <-w.stopCh:
 				// 退出前刷新剩余数据
-				w.flushRingBuffer(true)
+				w.flushRingBuffer()
 				w.closeCurrentFile()
 				return
 			case <-ticker.C:
-				w.flushRingBuffer(true)
+				w.flushRingBuffer()
 			case <-w.flushCh:
-				w.flushRingBuffer(false)
+				w.flushRingBuffer()
 			}
 		}
 	}()
 }
 
 // flushRingBuffer 将环形缓冲区的数据刷新到文件（仅由后台协程调用）
-func (w *LogBufferedRotatingWriter) flushRingBuffer(sync bool) {
+func (w *LogBufferedRotatingWriter) flushRingBuffer() {
 	data, dropped := w.ringBuffer.ReadAll()
 	if len(data) == 0 {
 		return
@@ -367,10 +368,8 @@ func (w *LogBufferedRotatingWriter) flushRingBuffer(sync bool) {
 		d.Free()
 	}
 
-	if sync {
-		// 同步到磁盘
-		w.currentFile.Sync()
-	}
+	// 同步到磁盘
+	w.currentFile.Sync()
 }
 
 // ensureFileOpen 确保当前文件已打开（仅由后台协程调用）
@@ -387,7 +386,7 @@ func (w *LogBufferedRotatingWriter) ensureFileOpen() error {
 		w.firstFile = true
 		var index uint32
 		for index = 0; index < w.retain; index++ {
-			fileName := w.getFilename(index, now)
+			fileName := w.getFilename(strconv.Itoa(int(index)), now)
 			info, err := os.Stat(fileName)
 			if err != nil {
 				break
@@ -405,7 +404,7 @@ func (w *LogBufferedRotatingWriter) ensureFileOpen() error {
 		w.needTruncateOnOpen = false
 	}
 
-	newFile := w.getFilename(w.currentFileIndex, now)
+	newFile := w.getFilename(strconv.Itoa(int(w.currentFileIndex)), now)
 	dir := filepath.Dir(newFile)
 	err := os.MkdirAll(dir, 0755)
 	if err != nil {
@@ -458,7 +457,7 @@ func (w *LogBufferedRotatingWriter) closeCurrentFile() {
 	w.currentSize = 0
 }
 
-func (w *LogBufferedRotatingWriter) getFilename(index uint32, now time.Time) string {
+func (w *LogBufferedRotatingWriter) getFilename(index string, now time.Time) string {
 	return LogFormat(w.fileNameFormat, &strings.Builder{}, CallerInfo{
 		Now:         now,
 		RotateIndex: index,
@@ -501,7 +500,7 @@ func (w *LogBufferedRotatingWriter) needRotateFile() bool {
 		now := w.GetSysNow()
 		if now.Unix()/int64(w.timeRotateCheckInterval) != w.lastCheckRotateTime/int64(w.timeRotateCheckInterval) {
 			w.lastCheckRotateTime = now.Unix()
-			if w.currentFileName != w.getFilename(w.currentFileIndex, now) {
+			if w.currentFileName != w.getFilename(strconv.Itoa(int(w.currentFileIndex)), now) {
 				// 文件名变化 Rotating
 				return true
 			}
