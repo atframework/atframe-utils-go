@@ -321,20 +321,20 @@ func (w *LogBufferedRotatingWriter) startFlushRoutine() {
 			select {
 			case <-w.stopCh:
 				// 退出前刷新剩余数据
-				w.flushRingBuffer()
+				w.flushRingBuffer(true)
 				w.closeCurrentFile()
 				return
 			case <-ticker.C:
-				w.flushRingBuffer()
+				w.flushRingBuffer(true)
 			case <-w.flushCh:
-				w.flushRingBuffer()
+				w.flushRingBuffer(false)
 			}
 		}
 	}()
 }
 
 // flushRingBuffer 将环形缓冲区的数据刷新到文件（仅由后台协程调用）
-func (w *LogBufferedRotatingWriter) flushRingBuffer() {
+func (w *LogBufferedRotatingWriter) flushRingBuffer(sync bool) {
 	data, dropped := w.ringBuffer.ReadAll()
 	if len(data) == 0 {
 		return
@@ -367,8 +367,10 @@ func (w *LogBufferedRotatingWriter) flushRingBuffer() {
 		d.Free()
 	}
 
-	// 同步到磁盘
-	w.currentFile.Sync()
+	if sync {
+		// 同步到磁盘
+		w.currentFile.Sync()
+	}
 }
 
 // ensureFileOpen 确保当前文件已打开（仅由后台协程调用）
