@@ -1,6 +1,7 @@
 package libatapp
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -194,6 +195,11 @@ func (d *DefaultGetTime) GetSysNow() time.Time {
 	return time.Now()
 }
 
+type FileWriter struct {
+	File       *os.File
+	FileWriter *bufio.Writer
+}
+
 type LogBufferedRotatingWriter struct {
 	id uint64
 	GetTime
@@ -203,10 +209,11 @@ type LogBufferedRotatingWriter struct {
 	retain          uint32
 
 	// 以下字段仅由后台协程访问，无需加锁
-	currentFileName    string
-	currentFileIndex   uint32
-	currentSize        uint64
-	currentFile        *os.File
+	currentFileName  string
+	currentFileIndex uint32
+	currentSize      uint64
+	currentFile      *FileWriter
+
 	firstFile          bool
 	needTruncateOnOpen bool
 
@@ -360,9 +367,9 @@ func (w *LogBufferedRotatingWriter) flushRingBuffer(sync bool) {
 
 	// 写入缓冲区中的数据
 	for _, d := range data {
-		n, _ := w.currentFile.Write(*d)
+		n, _ := w.currentFile.FileWriter.Write(*d)
 		w.currentSize += uint64(n)
-		n, _ = w.currentFile.Write(endLine)
+		n, _ = w.currentFile.FileWriter.Write(endLine)
 		w.currentSize += uint64(n)
 		// 写完后归还buffer到池
 		d.Free()
@@ -370,7 +377,7 @@ func (w *LogBufferedRotatingWriter) flushRingBuffer(sync bool) {
 
 	if sync {
 		// 同步到磁盘
-		w.currentFile.Sync()
+		w.currentFile.FileWriter.Flush()
 	}
 }
 
@@ -440,7 +447,10 @@ func (w *LogBufferedRotatingWriter) ensureFileOpen() error {
 	}
 
 	// 设置当前文件
-	w.currentFile = f
+	w.currentFile = &FileWriter{
+		File:       f,
+		FileWriter: bufio.NewWriter(f),
+	}
 	w.currentFileName = newFile
 	w.currentSize = uint64(info.Size())
 	w.needTruncateOnOpen = false
@@ -452,8 +462,9 @@ func (w *LogBufferedRotatingWriter) ensureFileOpen() error {
 // closeCurrentFile 关闭当前文件（仅由后台协程调用）
 func (w *LogBufferedRotatingWriter) closeCurrentFile() {
 	if w.currentFile != nil {
-		w.currentFile.Sync()
-		w.currentFile.Close()
+		w.currentFile.FileWriter.Flush()
+		w.currentFile.File.Sync()
+		w.currentFile.File.Close()
 		w.currentFile = nil
 	}
 	w.currentSize = 0
