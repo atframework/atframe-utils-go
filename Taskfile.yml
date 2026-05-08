@@ -39,7 +39,7 @@ tasks:
       ProtocGenGoVersion: '{{.ENV_PROTOC_GOPLUGIN_VERSION | default "v1.36.9"}}'
       ProtocGenGoGrpcVersion: '{{.ENV_PROTOC_GOGRPCPLUGIN_VERSION | default "v1.6.0"}}'
       BuildSettingDoc: '{{.ENV_BUILD_TARGET_DIR | default "build"}}'
-    dir: "{{.TASKFILE_DIR}}/cmd/install-protoc"
+    dir: "{{.TASKFILE_DIR}}/cmd/protoc-manager"
     cmds:
       # - echo "===== ToolsDir =  {{.ToolsDir}}..."
       # - echo "===== ENV_BUILD_TOOLS_DOWNLOAD_DIR =  {{.ENV_BUILD_TOOLS_DOWNLOAD_DIR}}..."
@@ -48,7 +48,7 @@ tasks:
       # - echo "===== ENV_PROTOC_GOPLUGIN_VERSION =  {{.ENV_PROTOC_GOPLUGIN_VERSION}}..."
       # - echo "===== ENV_PROTOC_GOGRPCPLUGIN_VERSION =  {{.ENV_PROTOC_GOGRPCPLUGIN_VERSION}}..."
 
-      - echo "AtFrame Start - Installing protoc and related plugins..."
+      - echo "go run . --protoc-version {{.ProtocVersion}} --go-plugin-version {{.ProtocGenGoVersion}} --tools-dir \"{{.PROJECT_ROOT}}/{{.ToolsDir}}\" --settings-file \"{{.PROJECT_ROOT}}/{{.BuildSettingDoc}}/build-settings.json\""
       - go run . --protoc-version {{.ProtocVersion}} --go-plugin-version {{.ProtocGenGoVersion}} --tools-dir "{{.PROJECT_ROOT}}/{{.ToolsDir}}" --settings-file "{{.PROJECT_ROOT}}/{{.BuildSettingDoc}}/build-settings.json"
     silent: true
   # 工具安装
@@ -77,7 +77,7 @@ tasks:
           url: "https://github.com/xresloader/xresloader/releases/download/v{{.XRESLOADER_VERSION}}/xresloader-{{.XRESLOADER_VERSION}}.jar"
           version: "{{.XRESLOADER_VERSION}}"
 
-    dir: "{{.TASKFILE_DIR}}/cmd/install-build-tools"
+    dir: "{{.TASKFILE_DIR}}/cmd/build-tools-manager"
     cmds:
       - echo "AtFrame Start - Installing other build tools... "
       - |

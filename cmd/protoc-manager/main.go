@@ -154,7 +154,7 @@ func InstallGoProtocPlugins(goPluginVersion string) error {
 
 func InstallCustomProtocPlugins() error {
 	// 获取当前执行文件所在目录,然后找到 atframe-utils-go 根目录
-	// 当前路径: atframe-utils-go/cmd/install-protoc
+	// 当前路径: atframe-utils-go/cmd/protoc-manager
 	// 需要回到: atframe-utils-go
 	cwd, err := os.Getwd()
 	if err != nil {

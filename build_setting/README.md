@@ -229,7 +229,7 @@ type BuildSettings struct {
 
 ## 在其他地方导入使用
 
-### 在 install-protoc 中使用
+### 在 protoc-manager 中使用
 
 ```go
 package main
