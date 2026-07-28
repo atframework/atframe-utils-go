@@ -264,13 +264,19 @@ func GetGoProtocPlugins() (exist bool, version string) {
 }
 
 func GetProtoGoPluginVersion() (string, error) {
-	// 跨平台兼容: 在 Windows 上自动添加 .exe 后缀
+	// 获取 Go bin 路径并使用完整路径执行插件
+	binPath, err := GetGoBinPath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get Go bin path: %w", err)
+	}
+
 	pluginName := "protoc-gen-go"
 	if runtime.GOOS == "windows" {
 		pluginName += ".exe"
 	}
+	pluginFullPath := filepath.Join(binPath, pluginName)
 
-	cmd := exec.Command(pluginName, "--version")
+	cmd := exec.Command(pluginFullPath, "--version")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get protoc-gen-go version: %w", err)
