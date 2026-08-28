@@ -404,7 +404,11 @@ func generateMutableForMessage(f *protogen.File, g *protogen.GeneratedFile, msg 
 		case field.Oneof != nil:
 			g.P("// ===== Mutable methods for ", msg.GoIdent.GoName, " ===== Oneof =====")
 			oneofName := field.Oneof.GoName
-			fullFieldName := fmt.Sprintf("%s_%s", msg.GoIdent.GoName, fieldName)
+			// oneof 包装类型的 Go 类型名必须取自 protogen（field.GoIdent.GoName）。
+			// 当 oneof 字段名与消息类型名冲突时（如 message DUserTeamDirty 内的 message Increase
+			// 与 oneof 字段 increase），protoc-gen-go 会把包装类型重命名为 DUserTeamDirty_Increase_（带尾部下划线），
+			// 手工拼接 msg_GoName + "_" + field.GoName 会得到错误的名字。
+			fullFieldName := field.GoIdent.GoName
 			if field.Oneof.Parent != nil && field.Message != nil {
 				fieldType := GoTypeString(g, field, true)
 				g.P(fmt.Sprintf(`func (m *%s) Mutable%s() *%s {`, msg.GoIdent.GoName, fieldName, fieldType))
