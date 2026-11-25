@@ -1,0 +1,7 @@
+protoc_version: "32.1"
+cache_dir: ".cache/atbuild"
+tools_dir: ".cache/atbuild/tools"
+tools_modfile: "tools.mod"
+standalone_modules:
+  - "."
+  - "buildkit"
